@@ -211,6 +211,14 @@ export async function playQuery(client, interaction, query) {
         requester: interaction.user,
     });
 
+    if (!result || !result.loadType) {
+        throw new TitanBotError(
+            'Lavalink resolve failed',
+            ErrorTypes.CONFIGURATION,
+            'Could not resolve that track — the music node returned no response. Please try again shortly, or contact the bot owner if this keeps happening.',
+        );
+    }
+
     const { loadType, tracks, playlistInfo } = result;
 
     if (loadType === 'playlist' || loadType === 'PLAYLIST_LOADED') {
