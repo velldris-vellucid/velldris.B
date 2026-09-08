@@ -14,8 +14,40 @@ import {
 } from './musicEmbeds.js';
 import { refreshPlayerMessage } from './playerHandler.js';
 
-const YOUTUBE_URL_PATTERN = /(?:youtube\.com|youtu\.be)/i;
+const DIRECT_URL_PATTERN = /^https?:\/\/(?:www\.|open\.|m\.)?(?:youtube\.com|youtu\.be|spotify\.com|soundcloud\.com|music\.youtube\.com|bandcamp\.com|vimeo\.com)\//i;
 const PLAYER_CONNECT_TIMEOUT_MS = 12_000;
+const RESOLVE_TIMEOUT_MS = 9_000;
+
+async function resolveWithTimeout(client, { query, requester }) {
+    const isDirectLink = DIRECT_URL_PATTERN.test(query.trim());
+
+    const resolvePromise = client.riffy.resolve({
+        query,
+        requester,
+        isUrl: isDirectLink,
+    });
+
+    let timeoutHandle;
+    const timeoutPromise = new Promise((resolve) => {
+        timeoutHandle = setTimeout(() => resolve(null), RESOLVE_TIMEOUT_MS);
+    });
+
+    try {
+        const result = await Promise.race([resolvePromise, timeoutPromise]);
+
+        if (!result) {
+            throw new TitanBotError(
+                'Search timed out',
+                ErrorTypes.USER_INPUT,
+                'That took too long to resolve. Try again, or use a more specific search term.',
+            );
+        }
+
+        return result;
+    } finally {
+        clearTimeout(timeoutHandle);
+    }
+}
 
 function getConnectedLavalinkNodes(client) {
     if (!client.riffy?.nodeMap) {
@@ -196,17 +228,9 @@ export async function joinVoiceChannel(client, interaction) {
 }
 
 export async function playQuery(client, interaction, query) {
-    if (YOUTUBE_URL_PATTERN.test(query)) {
-        throw new TitanBotError(
-            'YouTube URL blocked',
-            ErrorTypes.USER_INPUT,
-            'YouTube links are not supported. Try a song name instead.',
-        );
-    }
-
     const { player, guildData } = await ensurePlayer(client, interaction);
 
-    const result = await client.riffy.resolve({
+    const result = await resolveWithTimeout(client, {
         query,
         requester: interaction.user,
     });
